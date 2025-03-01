@@ -1,6 +1,7 @@
 # Loading packages
 library(ggplot2)
 library(dplyr)
+library(mosaic)
 
 # --- VIDEO 1: Summarizing data ----
 # --- Central Tendency and spread ---
@@ -54,10 +55,9 @@ pnorm(-2, mean=0, sd=2,lower.tail = FALSE)
 #get 5 random numbers from norm. dist. | mean=0 and sd=2
 rnorm(5, mean=0 , sd=2)
 
-
+# --- VIDEO 1: Precision of estimates: Confidence Intervals ----
 #--- precision of estimates ----
 
-library(mosaic)
 set.seed(21)
 sample1= rnorm(50,mean=20,sd=5) # simulate a sample
 
@@ -74,7 +74,53 @@ abline(v=c(q[1], q[2] ),col="red")
 text(x=q[1],y=200,round(q[1],3),adj=c(1,0))
 text(x=q[2],y=200,round(q[2],3),adj=c(0,0))
 
+# a better version of this plot:
+boot_df <- data.frame(means = boot.means[,1])
 
+ggplot(boot_df, aes(x = means)) +
+  geom_histogram(
+    fill = "cornflowerblue", 
+    color = "white",
+    alpha = 0.7,
+    bins = 30) +
+  geom_vline(
+    xintercept = q[1], 
+    color = "#FF5555", 
+    size = 1.2,
+    linetype = "dashed") +
+  geom_vline(
+    xintercept = q[2], 
+    color = "#FF5555", 
+    size = 1.2,
+    linetype = "dashed") +
+  annotate(
+    "text",
+    x = q[1] - 0.1,
+    y = 100,
+    label = round(q[1], 3),
+    color = "#FF5555",
+    fontface = "bold",
+    hjust = 1) +
+  annotate(
+    "text",
+    x = q[2] + 0.1,
+    y = 100,
+    label = round(q[2], 3),
+    color = "#FF5555",
+    fontface = "bold",
+    hjust = 0) +
+  labs(
+    title = "Bootstrap Distribution of Sample Means",
+    subtitle = paste0("95% CI: [", round(q[1], 3), ", ", round(q[2], 3), "]"),
+    x = "Sample Means",
+    y = "Frequency") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5, color = "darkgrey"),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    axis.title = element_text(face = "bold"))
 
 alpha=0.05 # 95% confidence interval
 sd=5
