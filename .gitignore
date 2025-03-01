@@ -7,3 +7,6 @@
 .RData
 .Ruserdata
 *.Rproj
+
+#Large data
+compgen2025/data/leukemiaExp.txt
