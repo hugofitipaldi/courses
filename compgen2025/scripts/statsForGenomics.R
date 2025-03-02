@@ -8,7 +8,8 @@ library(mosaic)
 library(qvalue)
 require(matrixStats)
 library(gridExtra)
-library(tidyr)  
+library(tidyr)
+library(broom)
 
 # --- VIDEO 1: Summarizing data ----
 # --- Central Tendency and spread ---
@@ -490,45 +491,178 @@ p4 <- ggplot(results_df, aes(x = dx, y = -log10(Moderated_P))) +
   )
 
 grid.arrange(p1, p2, p3, p4, ncol = 2)
+par(mfrow=c(1,1))
 
-#---- regression ----
+# --- VIDEO 6 & 7: Linear Regression ----
+# Linear regression is a statistical method that models the relationship between
+# a dependent variable (y) and one or more independent variables (x) using a linear equation
 
-
-
-# set random number seed, so that the random numbers from the text
-# is the same when you run the code.
+#---- regression simulation ---
 set.seed(32)
 
-# get 50 X values between 1 and 100
-x = runif(50,1,100)
+# Generate 50 random x values uniformly distributed between 1 and 100
+# These represent the independent variable (e.g., histone modification scores)
+x = runif(50, 1, 100)
 
-# set b0,b1 and variance (sigma)
+# Define the true parameters of our linear model
+b0 = 100  # Intercept (baseline expression level)
+b1 = 2    # Slope (effect of histone modification on expression)
+sigma = 20  # Standard deviation of the error (biological/technical variation)
+
+# Generate random error terms from normal distribution with mean 0 and sd=sigma
+# These represent random biological variation and measurement noise
+eps = rnorm(50, 0, sigma)
+
+# Calculate y values using the linear equation: y = b0 + b1*x + error
+# This simulates gene expression data that depends linearly on histone modifications
+y = b0 + b1*x + eps
+
+# Fit a linear regression model to the simulated data
+# The formula y~x means "y depends on x"
+mod1 = lm(y ~ x)
+
+# Create a scatter plot of the data
+plot(x, y, pch=20,  # pch=20 uses filled circles as plot symbols
+     ylab="Gene Expression", xlab="Histone modification score")
+
+# Add the fitted regression line to the plot
+abline(mod1, col="blue")
+
+# Display the model coefficients
+mod1
+
+# Display a summary of the regression results
+# Including estimates, standard errors, t-values, p-values, R-squared, etc.
+summary(mod1)
+
+# Calculate 95% confidence intervals for the coefficients
+# These show the range of plausible values for the true parameters
+confint(mod1)
+
+# Extract just the coefficient values from the model
+coef(mod1)
+
+# Better Viz
+# Generating data just as in the original code
+x = runif(50, 1, 100)
 b0 = 100
 b1 = 2
 sigma = 20
-# simulate error terms from normal distribution
-eps = rnorm(50,0,sigma)
-# get y values from the linear equation and addition of error terms
-y = b0 + b1*x+ eps
+eps = rnorm(50, 0, sigma)
+y = b0 + b1*x + eps
 
-mod1=lm(y~x)
+# Creating df
+regression_data <- data.frame(
+  x = x,
+  y = y
+)
 
-# plot the data points
-plot(x,y,pch=20,
-     ylab="Gene Expression",xlab="Histone modification score")
-# plot the linear fit
-abline(mod1,col="blue")
+# Fitting the linear model
+mod1 = lm(y ~ x, data = regression_data)
 
-mod1
+# model diagnostics and predictions
+model_summary <- summary(mod1)
+model_tidy <- tidy(mod1)
+model_glance <- glance(mod1)
+model_augment <- augment(mod1)
 
+# prediction intervals for plotting
+new_x <- data.frame(x = seq(min(x), max(x), length.out = 100))
+predicted <- predict(mod1, newdata = new_x, interval = "prediction")
+confidence <- predict(mod1, newdata = new_x, interval = "confidence")
+prediction_data <- data.frame(
+  x = new_x$x,
+  fit = predicted[,"fit"],
+  lwr_pred = predicted[,"lwr"],
+  upr_pred = predicted[,"upr"],
+  lwr_conf = confidence[,"lwr"],
+  upr_conf = confidence[,"upr"]
+)
 
-summary(mod1)
+# main regression plot
+p1 <- ggplot(regression_data, aes(x = x, y = y)) +
+  # Add a confidence interval ribbon (narrower)
+  geom_ribbon(data = prediction_data, 
+              aes(x = x, y = fit, ymin = lwr_conf, ymax = upr_conf),
+              fill = "lightblue", alpha = 0.4) +
+  # Add a prediction interval ribbon (wider)
+  geom_ribbon(data = prediction_data, 
+              aes(x = x, y = fit, ymin = lwr_pred, ymax = upr_pred),
+              fill = "lightblue", alpha = 0.2) +
+  # Add the regression line
+  geom_smooth(method = "lm", formula = y ~ x, color = "blue", se = FALSE) +
+  # Add the data points
+  geom_point(size = 3, alpha = 0.7, color = "darkblue") +
+  # Add labels and title
+  labs(
+    title = "Linear Regression: Gene Expression vs. Histone Modification",
+    subtitle = paste("y =", round(coef(mod1)[1], 2), "+", round(coef(mod1)[2], 2), "x"),
+    x = "Histone Modification Score",
+    y = "Gene Expression Level",
+    caption = paste("R² =", round(model_glance$r.squared, 3), 
+                    "| p-value =", format(model_glance$p.value, scientific = TRUE, digits = 3))
+  ) +
+  # Use a clean theme
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5),
+    panel.grid.minor = element_blank()
+  )
 
-# get confidence intervals 
-confint(mod1)
+# a residual plot
+p2 <- ggplot(model_augment, aes(x = .fitted, y = .resid)) +
+  geom_point(size = 3, alpha = 0.7, color = "darkblue") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  labs(
+    title = "Residual Plot",
+    x = "Fitted Values",
+    y = "Residuals"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    panel.grid.minor = element_blank()
+  )
 
-# pull out coefficients from the model
-coef(mod1)
+# QQ plot for residuals
+p3 <- ggplot(model_augment, aes(sample = .resid)) +
+  stat_qq() +
+  stat_qq_line(color = "red") +
+  labs(
+    title = "Normal Q-Q Plot of Residuals",
+    x = "Theoretical Quantiles",
+    y = "Sample Quantiles"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    panel.grid.minor = element_blank()
+  )
 
+# coefficient plot
+coef_data <- data.frame(
+  term = c("Intercept", "Slope"),
+  estimate = coef(mod1),
+  conf.low = confint(mod1)[,1],
+  conf.high = confint(mod1)[,2]
+)
+
+p4 <- ggplot(coef_data, aes(x = term, y = estimate)) +
+  geom_point(size = 4, color = "darkblue") +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2, color = "darkblue") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  labs(
+    title = "Coefficient Estimates with 95% CI",
+    x = NULL,
+    y = "Estimate"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    panel.grid.minor = element_blank()
+  )
+
+grid.arrange(p1, p2, p3, p4, ncol = 2)
 
 
