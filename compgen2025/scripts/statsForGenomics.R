@@ -55,8 +55,8 @@ pnorm(-2, mean=0, sd=2,lower.tail = FALSE)
 #get 5 random numbers from norm. dist. | mean=0 and sd=2
 rnorm(5, mean=0 , sd=2)
 
-# --- VIDEO 1: Precision of estimates: Confidence Intervals ----
-#--- precision of estimates ----
+# --- VIDEO 2: Precision of estimates: Confidence Intervals ----
+#--- precision of estimates ---
 
 set.seed(21)
 sample1= rnorm(50,mean=20,sd=5) # simulate a sample
@@ -125,9 +125,10 @@ ggplot(boot_df, aes(x = means)) +
 alpha=0.05 # 95% confidence interval
 sd=5
 n=50
-mean(sample1)+qnorm(c(alpha/2,1-alpha/2))*sd/sqrt(n)
+mean(sample1)+qnorm(c(alpha/2,1-alpha/2))*sd/sqrt(n) # Similar to the one calculated in the bootstrap
 
-#--- hypothesis testing ----
+# --- VIDEO 3: Testing differences between samples: Hypothesis testing ----
+#--- hypothesis testing ---
 
 set.seed(100)
 gene1=rnorm(30,mean=4,sd=2)
@@ -149,6 +150,73 @@ text(x=org.diff,y=200,"org. diff.",adj=c(1,0),col="blue")
 
 p.val=sum(exp.null[,1]>org.diff)/length(exp.null[,1])
 p.val
+
+# Better plot:
+null_dist_df <- data.frame(diff_means = exp.null[,1])
+crit_val <- quantile(exp.null[,1], 0.95)
+
+# Create the plot
+ggplot(null_dist_df, aes(x = diff_means)) +
+  geom_histogram(
+    fill = "cornflowerblue", 
+    color = "white",
+    alpha = 0.8,
+    bins = 25) +
+  geom_vline(
+    xintercept = crit_val, 
+    color = "#FF5555", 
+    size = 1,
+    linetype = "dashed") +
+  geom_vline(
+    xintercept = org.diff, 
+    color = "#4477AA", 
+    size = 1,
+    linetype = "solid") +
+  annotate(
+    "text",
+    x = crit_val - 0.05,
+    y = 100,
+    label = "0.05",
+    color = "#FF5555",
+    fontface = "bold",
+    hjust = 1) +
+  annotate(
+    "text",
+    x = org.diff - 0.05,
+    y = 125,
+    label = "org. diff.",
+    color = "#4477AA",
+    fontface = "bold",
+    hjust = 1) +
+  annotate(
+    "text",
+    x = max(c(org.diff, crit_val)) + 0.3,
+    y = 75,
+    label = paste("p-value =", round(p.val, 4)),
+    color = "black",
+    fontface = "italic",
+    hjust = 0) +
+  geom_area(
+    data = subset(null_dist_df, diff_means > crit_val),
+    aes(x = diff_means, y = after_stat(count)),
+    stat = "bin",
+    bins = 25,
+    fill = "#FF5555",
+    alpha = 0.3) +
+  labs(
+    title = expression(paste(H[0], ": No difference in means")),
+    subtitle = "Permutation-based null distribution",
+    x = "Difference in means (null distribution)",
+    y = "Frequency",
+    caption = "Red area: rejection region (α = 0.05)") +
+  xlim(-2, 2) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5, color = "darkgrey"),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    axis.title = element_text(face = "bold"))
 
 
 # Welch's t-test
