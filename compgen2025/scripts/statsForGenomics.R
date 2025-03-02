@@ -2,6 +2,10 @@
 library(ggplot2)
 library(dplyr)
 library(mosaic)
+#if (!require("BiocManager", quietly = TRUE))
+#  install.packages("BiocManager")
+#BiocManager::install("qvalue")
+library(qvalue)
 
 # --- VIDEO 1: Summarizing data ----
 # --- Central Tendency and spread ---
@@ -218,18 +222,20 @@ ggplot(null_dist_df, aes(x = diff_means)) +
     panel.grid.major.x = element_blank(),
     axis.title = element_text(face = "bold"))
 
+# Welch's t-test (default in R)
+# This version does NOT assume equal variances between groups
+# It adjusts the degrees of freedom using the Welch-Satterthwaite equation
+# This is generally recommended as it's more robust when variances differ
+stats::t.test(gene1, gene2) # default in R for t-test
 
-# Welch's t-test
-stats::t.test(gene1,gene2)
-
-
-# t-test with equal variance assumption
-stats::t.test(gene1,gene2,var.equal=TRUE)
-
+# Student's t-test with equal variance assumption
+# This is the classical t-test that assumes both groups have equal variances
+# Only use this when you have strong reason to believe variances are equal
+# or when sample sizes are very small and approximately equal
+stats::t.test(gene1, gene2, var.equal=TRUE)
 
 #--- mult. test correction ----
 
-library(qvalue)
 data(hedenfalk)
 
 qvalues = qvalue(hedenfalk$p)$q
