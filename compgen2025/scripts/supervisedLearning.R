@@ -4,6 +4,10 @@ library(ggplot2)
 library(reshape2)
 library(gridExtra)
 library(RANN)
+library(pROC)
+library(ggplot2)
+library(viridis)
+library(dplyr)
 
 # --- VIDEO 2: Data pre-processing ----
 # Get file paths for data stored in the compGenomRData package
@@ -123,136 +127,220 @@ knnimputedGexp=predict(knnImpute,missing_tgexp)
 
 # --- VIDEO 3: Data split strategies ----
 # --------- splitting the data
-
+# Merge patient annotation data with gene expression data
+# by="row.names" joins the datasets on their row names (patient IDs)
 tgexp=merge(patient,tgexp,by="row.names")
 
-# push sample ids back to the row names
+# Push sample IDs back to the row names
+# After merge, the row names become Row.names column, so we restore them
 rownames(tgexp)=tgexp[,1]
 tgexp=tgexp[,-1]
 dim(tgexp)
 
 set.seed(3031) # set the random number seed for reproducibility 
 
-# get indices for 70% of the data set
+# Create indices for 70% of the data for training
+# createDataPartition ensures balanced sampling across classes in column 1
 intrain <- createDataPartition(y = tgexp[,1], p= 0.7)[[1]]
 
-# seperate test and training sets
+# Split data into training (70%) and testing (30%) sets
 training <- tgexp[intrain,]
 testing <- tgexp[-intrain,]
 
-
-
+# --- VIDEO 4: Training and model assessment ----
 # -------- predict subtypes with KNN
-library(caret)
-knnFit=knn3(x=training[,-1], # training set
-            y=training[,1], # training set class labels
-            k=5)
-# predictions on the test set
-trainPred=predict(knnFit,training[,-1])
-testPred=predict(knnFit,testiing[,-1])
 
+# Train KNN model with k=5
+knnFit = knn3(x = training[,-1],     # Training features (gene expression data)
+              y = training[,1],      # Training class labels (subtypes)
+              k = 5)                 # Number of neighbors to consider
+
+# Make predictions on both training and test sets
+trainPred=predict(knnFit,training[,-1])
+testPred=predict(knnFit,testing[,-1])
 
 # --------  model performance
 
-# get k-NN prediction on the training data itself, with k=5
-knnFit=knn3(x=training[,-1], # training set
-            y=training[,1], # training set class labels
-            k=5)
+# Train a k-NN classifier on the training data
+knnFit=knn3(x=training[,-1], # Training features (gene expression data)
+            y=training[,1], # Training class labels (subtypes)
+            k=5) # Number of neighbors to consider
 
-# predictions on the test set, return class labels
+# Make predictions on the test set
+# type="class" returns predicted class labels directly instead of probabilities
 testPred=predict(knnFit,testing[,-1],type="class")
 
-# compare the predicted labels to real labels
-# get different performance metrics
+# Evaluate model performance by comparing predicted vs. actual labels
+# confusionMatrix calculates various performance metrics
 confusionMatrix(data=testing[,1],reference=testPred)
-
-
 
 # -------- ROC curves
 
-library(pROC)
-
-# get k-NN class probabilities
-# prediction probabilities on the test set
+# Get k-NN prediction probabilities for the test set
 testProbs=predict(knnFit,testing[,-1])
 
-# get the roc curve
-rocCurve <- pROC::roc(response = testing[,1],
-                      predictor = testProbs[,1],
-                      ## This function assumes that the second
-                      ## class is the class of interest, so we
-                      ## reverse the labels.
+# Calculate the ROC curve
+rocCurve <- pROC::roc(response = testing[,1],        # Actual class labels
+                      predictor = testProbs[,1],     # Predicted probabilities for the first class
+                      # This function assumes that the second class is the class of interest,
+                      # so we reverse the levels to make the first class the positive class
                       levels = rev(levels(testing[,1])))
+
 # plot the curve
+par(mfrow = c(1, 1))
 plot(rocCurve, legacy.axes = TRUE)
 
 # return area under the curve
 pROC::auc(rocCurve)
 
-
-
+# --- VIDEO 6: Random Forests ----
 # -----------Random Forests 
-
 
 set.seed(17)
 
-# we will do no resampling based prediction error
-# although it is advised to do so even for random forests
+# Define training control parameters
+# method="none" means no cross-validation or resampling will be used
+# Although resampling is generally recommended even for random forests
 trctrl <- trainControl(method = "none")
 
-# we will now train random forest model
-rfFit <- train(subtype~., 
-               data = training, 
-               method = "ranger",
-               trControl=trctrl,
-               importance="permutation", # calculate importance
-               tuneGrid = data.frame(mtry=100,
-                                     min.node.size = 1,
-                                     splitrule="gini")
+# Train a Random Forest model using the ranger implementation
+rfFit <- train(subtype~.,           # Formula: predict subtype using all other variables
+               data = training,     # Training dataset
+               method = "ranger",   # Use ranger implementation of Random Forests
+               trControl = trctrl,  # Training control parameters defined above
+               importance = "permutation",  # Calculate variable importance using permutation
+               tuneGrid = data.frame(mtry = 100,           # Number of variables to consider at each split
+                                     min.node.size = 1,     # Minimum node size
+                                     splitrule = "gini")    # Split rule criterion
 )
-# print OOB error
+
+# Print Out-Of-Bag (OOB) error rate
+# This is an unbiased estimate of the test error
 rfFit$finalModel$prediction.error
 
-
+# --- VIDEO 7: Variable importance ----
 # ---------- Variable Importance
 
 plot(varImp(rfFit),top=10)
 
+# Better Viz
+# Extract variable importance
+var_imp <- as.data.frame(ranger::importance(rfFit$finalModel))
+var_imp$Variable <- rownames(var_imp)
+names(var_imp)[1] <- "Importance"
 
+# Sort by importance and get top 20
+top_vars <- var_imp %>%
+  arrange(desc(Importance)) %>%
+  head(20)
+
+# Create importance plot
+ggplot(top_vars, aes(x = reorder(Variable, Importance), y = Importance, fill = Importance)) +
+  geom_bar(stat = "identity") +
+  scale_fill_viridis_c() +
+  coord_flip() +
+  theme_minimal() +
+  labs(title = "Top 20 Variables by Importance in Random Forest",
+       subtitle = "Based on permutation importance",
+       x = "",
+       y = "Variable Importance") +
+  theme(plot.title = element_text(face = "bold"),
+        axis.text.y = element_text(size = 8))
+
+# --- VIDEO 8: Regression with ML ----
 # ---------- Regression with random forests
 
-# file path for CpG methylation and age
+# Get file path for CpG methylation and age data
 fileMethAge=system.file("extdata",
                         "CpGmeth2Age.rds",
                         package="compGenomRData")
 
-# read methylation-age table
+# Read methylation-age table
 ameth=readRDS(fileMethAge)
 dim(ameth)
 
-# filter based on variance
+# Filter CpG sites based on variance
+# Keep Age column (first column) and CpGs with standard deviation > 0.1
 ameth=ameth[,c(TRUE,matrixStats::colSds(as.matrix(ameth[,-1]))>0.1)]
-dim(ameth)
+dim(ameth) # Display dimensions after filtering
 
-# we are not going to do any cross-validatin
-# and rely on OOB error
+# Set up training control
+# We're not doing cross-validation and will rely on OOB error instead
 trctrl <- trainControl(method = "none")
 
-# we will now train random forest model
-rfregFit <- train(Age~., 
-                  data = ameth, 
-                  method = "ranger",
-                  trControl=trctrl,
-                  # calculate importance
-                  importance="permutation", 
-                  tuneGrid = data.frame(mtry=50,
-                                        min.node.size = 5,
-                                        splitrule="variance")
-)
-# plot Observed vs OOB predicted values from the model
+# Train random forest regression model
+rfregFit <- train(Age ~ .,             # Predict Age using all other variables
+                  data = ameth,         # Methylation dataset
+                  method = "ranger",    # Use ranger implementation of Random Forests
+                  trControl = trctrl,   # Training control parameters
+                  # Calculate variable importance using permutation method
+                  importance = "permutation",
+                  # Set hyperparameters
+                  tuneGrid = data.frame(mtry = 50,              # Number of variables to consider at each split
+                                        min.node.size = 5,       # Minimum node size
+                                        splitrule = "variance"))  # Split rule criterion for regression
+
+
+# Plot Observed vs. OOB predicted values from the model
 plot(ameth$Age,rfregFit$finalModel$predictions,
      pch=19,xlab="observed Age",
      ylab="OOB predicted Age")
 mtext(paste("R-squared",
-            format(rfregFit$finalModel$r.squared,digits=2)))
+            format(rfregFit$finalModel$r.squared,digits=2))) # Add R-squared value to the plot
 
+# Better Viz
+# Create data frame for plotting
+pred_df <- data.frame(
+  Observed = ameth$Age,
+  Predicted = rfregFit$finalModel$predictions,
+  Error = rfregFit$finalModel$predictions - ameth$Age
+)
+
+# Calculate statistics
+rmse <- sqrt(mean((pred_df$Observed - pred_df$Predicted)^2))
+r_squared <- rfregFit$finalModel$r.squared
+mae <- mean(abs(pred_df$Error))
+
+# Create enhanced scatter plot
+ggplot(pred_df, aes(x = Observed, y = Predicted)) +
+  geom_point(aes(color = abs(Error)), alpha = 0.8) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "gray50") +
+  geom_smooth(method = "lm", se = FALSE, color = "blue", linetype = "solid") +
+  scale_color_viridis(option = "D") +
+  theme_minimal() +
+  labs(title = "Random Forest Regression: Predicted vs. Observed Age",
+       subtitle = paste("R² =", round(r_squared, 3), "| RMSE =", round(rmse, 2), "| MAE =", round(mae, 2)),
+       x = "Observed Age (years)",
+       y = "Predicted Age (years)",
+       color = "Absolute Error") +
+  theme(legend.position = "right",
+        plot.title = element_text(face = "bold"))
+
+# Add additional analysis to prediction data frame
+pred_df$Residual <- pred_df$Error
+pred_df$StdResidual <- scale(pred_df$Residual)
+
+# Create residual plots
+p1 <- ggplot(pred_df, aes(x = Predicted, y = Residual)) +
+  geom_point(aes(color = abs(Residual)), alpha = 0.7) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  geom_smooth(method = "loess", se = FALSE, color = "blue") +
+  scale_color_viridis_c() +
+  theme_minimal() +
+  labs(title = "Residual Plot",
+       x = "Predicted Age",
+       y = "Residual (Predicted - Observed)",
+       color = "Absolute\nResidual") +
+  theme(legend.position = "none")
+
+p2 <- ggplot(pred_df, aes(x = Residual)) +
+  geom_histogram(aes(y = ..density..), bins = 30, fill = "skyblue", color = "black", alpha = 0.7) +
+  geom_density(color = "darkblue", size = 1) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
+  theme_minimal() +
+  labs(title = "Residual Distribution",
+       x = "Residual (Predicted - Observed)",
+       y = "Density")
+
+# Arrange plots
+gridExtra::grid.arrange(p1, p2, ncol = 2)
