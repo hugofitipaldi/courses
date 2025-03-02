@@ -1,97 +1,127 @@
 # Importing required libraries
+library(caret)
+library(ggplot2)
+library(reshape2)
+library(gridExtra)
+library(RANN)
 
-# --- VIDEO 1: Distance metrics ----
-# get file paths
+# --- VIDEO 2: Data pre-processing ----
+# Get file paths for data stored in the compGenomRData package
 fileLGGexp=system.file("extdata",
                        "LGGrnaseq.rds",
                        package="compGenomRData")
 fileLGGann=system.file("extdata",
                        "patient2LGGsubtypes.rds",
                        package="compGenomRData")
-# gene expression values
+
+# Load gene expression values
+# LGG: Lower Grade Glioma RNA-seq data
 gexp=readRDS(fileLGGexp)
 head(gexp[,1:5])
-
-
 dim(gexp)
 
-# patient annotation
+# Load patient annotation data (clinical/subtype information)
 patient=readRDS(fileLGGann)
 head(patient)
-
 
 #------- data transformation
 
 par(mfrow=c(1,2))
+# Plot histogram of raw gene expression values for the 5th sample
 hist(gexp[,5],xlab="gene expression",main="",border="blue4",
      col="cornflowerblue")
+# Plot histogram of log-transformed gene expression values
+# Adding 1 before log transformation handles zeros (log(0) is undefined)
 hist(log10(gexp+1)[,5], xlab="gene expression log scale",main="",
      border="blue4",col="cornflowerblue")
 
-# take logs
+# Apply log transformation to the entire expression matrix
 gexp=log10(gexp+1)
-
 
 # transpose the matrix
 tgexp <- t(gexp)
 
+# Better viz
+raw_data <- data.frame(
+  Expression = gexp[,5],  # Using data before log transformation
+  Type = "Raw"
+)
+
+log_data <- data.frame(
+  Expression = log10(raw_data$Expression + 1),
+  Type = "Log10"
+)
+
+combined_data <- rbind(raw_data, log_data)
+
+# Create density plots with histograms
+ggplot(combined_data, aes(x = Expression, fill = Type)) +
+  geom_histogram(aes(y = ..density..), bins = 50, alpha = 0.7, position = "identity") +
+  geom_density(alpha = 0.3) +
+  facet_wrap(~Type, scales = "free") +
+  scale_fill_manual(values = c("Raw" = "#1B9E77", "Log10" = "#D95F02")) +
+  theme_minimal() +
+  labs(title = "Effect of Log Transformation on Gene Expression Distribution",
+       subtitle = "Sample 5",
+       x = "Expression Value",
+       y = "Density") +
+  theme(legend.position = "none",
+        strip.text = element_text(face = "bold", size = 12),
+        plot.title = element_text(face = "bold"))
 
 #----------- data filtering and scaling
-library(caret)
-# remove near zero variation for the columns at least
-# 85% of the values are the same
-# this function creates the filter but doesn't apply it yet
+# Remove near zero variation variables (genes)
+# uniqueCut=15 means if 93.3% (1-1/15) of the values are the same, the variable is removed
+# This step helps eliminate genes with very low expression variability
 nzv=preProcess(tgexp,method="nzv",uniqueCut = 15)
 
-# apply the filter using "predict" function
-# return the filtered dataset and assign it to nzv_tgexp
-# variable
+# Apply the near-zero variance filter using the "predict" function
+# Returns the filtered dataset with low-variability genes removed
 nzv_tgexp=predict(nzv,tgexp)
 
-# get most variable genes
+# Identify most variable genes based on standard deviation
+# Standard deviation is calculated for each column (gene)
 SDs=apply(tgexp,2,sd )
+# Select the top 1000 genes with highest standard deviation
+# order() returns indices sorted by SD values (decreasing=TRUE for highest first)
 topPreds=order(SDs,decreasing = TRUE)[1:1000]
+# Subset the expression matrix to keep only the top 1000 most variable genes
 tgexp=tgexp[,topPreds]
 
-# scale the data
-library(caret)
+# Center the data (subtract mean from each column)
+# This standardizes genes to have a mean of zero
 processCenter=preProcess(tgexp, method = c("center"))
 tgexp=predict(processCenter,tgexp)
 
-
-
-# create a filter for removing highly correlated variables
-# if two variables are highly correlated only one of them
-# is removed
+# Create a filter for removing highly correlated variables
+# If two genes are correlated above the cutoff (0.9), one is removed
+# This reduces redundancy in the dataset
 corrFilt=preProcess(tgexp, method = "corr",cutoff = 0.9)
-tgexp=predict(corrFilt,tgexp)
-
-
+tgexp=predict(corrFilt,tgexp) # Apply the correlation filter
 
 # ---------- dealing with missing values
-
+# Create a copy of the expression data with an artificially introduced NA value
 missing_tgexp=tgexp
 missing_tgexp[1,1]=NA
+
 anyNA(missing_tgexp) # check if there are NA values
 
-
-# drop columns with missing values
+# Method 1: Drop columns (genes) with any missing values
+# colSums(is.na()) counts missing values in each column
+# Only keep columns where this count is 0 (no missing values)
 gexpnoNA=missing_tgexp[ , colSums(is.na(missing_tgexp)) == 0]
 
-# median impute
-library(caret)
+# Method 2: Median imputation
+# Replace missing values with the median value of that column (gene)
 mImpute=preProcess(missing_tgexp,method="medianImpute")
 imputedGexp=predict(mImpute,missing_tgexp)
 
-# knn impute
-library(RANN)
+# Method 3: k-nearest neighbors imputation
+# Replace missing values based on values from similar samples/genes
 knnImpute=preProcess(missing_tgexp,method="knnImpute")
 knnimputedGexp=predict(knnImpute,missing_tgexp) 
 
-
-
-
-
+# --- VIDEO 3: Data split strategies ----
 # --------- splitting the data
 
 tgexp=merge(patient,tgexp,by="row.names")
