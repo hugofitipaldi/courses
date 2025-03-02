@@ -207,29 +207,30 @@ grid.arrange(
 # --- VIDEO 4: Dimensionality reduction ----
 #--- PCA on covariance matrix
 
-# create the subset of the data with two genes only
-# notice that we transpose the matrix so samples are 
-# on the columns
+# Create a subset of the data with only two genes
+# Transpose the matrix so samples are in rows and genes in columns
 sub.mat=t(mat[rownames(mat) %in% c("ENSG00000100504","ENSG00000105383"),])
 
-
-# calculate the PCA only for our genes and all the samples
+# Calculate PCA on this small subset (2 genes across all samples)
+# scale() standardizes the data (mean=0, sd=1) before PCA
 pr=princomp(scale(sub.mat))
 
-# show explained variance
+# Visualize the variance explained by each principal component
 screeplot(pr)
 
+#----- SVD/PCA (Singular Value Decomposition / Principal Component Analysis)
 
-#----- SVD/PCA
-
+# Calculate SVD on the scaled expression matrix
 d=svd(scale(mat)) 
+# Also calculate PCA using prcomp (alternative method)
 d1=prcomp(mat,scale. = T)
 
-# plot first eigengene/vector
+# Plot the first right singular vector (eigengene/eigenpatient)
 plot(d$v[,1],type="b")
+# Plot the second right singular vector
 plot(d$v[,2],type="b")
 
-# plot the heatmap without clustering columns
+# Create heatmap without clustering columns (preserving original sample order)
 pheatmap(mat,show_rownames=FALSE,show_colnames=FALSE,cluster_cols = FALSE,
          annotation_col=annotation_col,
          scale = "none",clustering_method="ward.D2",
@@ -240,14 +241,18 @@ pheatmap(mat,show_rownames=FALSE,show_colnames=FALSE,cluster_cols = FALSE,
 
 
 
-# projections on eigengenes or assays
+# Project gene expression data onto eigengenes (PCs)
+# This transforms data from gene space to PC space
 eigengenes=scale(mat) %*% (d$v) # projection on eigenassays
+# Visualize first two PCs using smoothScatter (density-based scatter plot)
 smoothScatter(eigengenes[,1],eigengenes[,2],pch=19,
               colramp =heat.colors)
 
+# Regular scatter plot of first two PCs
 plot(eigengenes[,1],eigengenes[,2],pch=19)
 
-assays=t(d$u) %*% scale(mat) # projection on eigenassays
+# Project data onto eigenassays (left singular vectors)
+assays=t(d$u) %*% scale(mat)
 plot(assays[1,],assays[2,],pch=19,
      col=as.factor(annotation_col$LeukemiaType))
 
