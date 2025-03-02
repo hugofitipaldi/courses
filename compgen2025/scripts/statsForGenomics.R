@@ -6,6 +6,9 @@ library(mosaic)
 #  install.packages("BiocManager")
 #BiocManager::install("qvalue")
 library(qvalue)
+require(matrixStats)
+library(gridExtra)
+library(tidyr)  
 
 # --- VIDEO 1: Summarizing data ----
 # --- Central Tendency and spread ---
@@ -298,48 +301,195 @@ ggplot(plot_data_long, aes(x = raw_p, y = adjusted_p, color = adjustment_method)
     axis.title = element_text(face = "bold")) +
   coord_fixed(ratio = 1, xlim = c(0, 1), ylim = c(0, 1))
 
-#--- moderated t-test ----
+# --- VIDEO 5: moderated tests ----
+#--- moderated t-test ---
+# The moderated t-test is a variation of the standard t-test that "shrinks" individual gene variances 
+# toward a common value to improve variance estimates when sample sizes are small (common in genomics)
 
 set.seed(100)
 
-#sample data matrix from normal distribution
+# Generate sample data matrix from normal distribution
+# Creating 3000 values with mean=200 and sd=70 to simulate gene expression levels
+gset = rnorm(3000, mean=200, sd=70)
+data = matrix(gset, ncol=6)  # Reshape into matrix with 6 columns (samples) and 500 rows (genes)
 
-gset=rnorm(3000,mean=200,sd=70)
-data=matrix(gset,ncol=6)
+# Define sample groups
+group1 = 1:3  # First 3 columns represent group 1 (e.g., treatment)
+group2 = 4:6  # Last 3 columns represent group 2 (e.g., control)
+n1 = 3  # Sample size of group 1
+n2 = 3  # Sample size of group 2
 
-# set groups
-group1=1:3
-group2=4:6
-n1=3
-n2=3
-dx=rowMeans(data[,group1])-rowMeans(data[,group2])
+# Calculate mean difference between groups for each gene
+dx = rowMeans(data[,group1]) - rowMeans(data[,group2])
 
-require(matrixStats)
+# Calculate the standard error using pooled variance estimate
+# This is the denominator of the t-statistic using classical approach
+stderr <- sqrt((rowVars(data[,group1])*(n1-1) + rowVars(data[,group2])*(n2-1)) / 
+                 (n1+n2-2) * (1/n1 + 1/n2))
 
-# get the estimate of pooled variance 
-stderr <- sqrt( (rowVars(data[,group1])*(n1-1) + rowVars(data[,group2])*(n2-1)) / (n1+n2-2) * ( 1/n1 + 1/n2 ))
+# Moderate (shrink) the standard error by averaging with the median standard error
+# This is the key step in the moderated t-test approach that stabilizes variance estimates
+# Particularly useful when sample sizes are small, as in many genomics experiments
+mod.stderr <- (stderr + median(stderr)) / 2  # moderation in variation
 
-# do the shrinking towards median
-mod.stderr <- (stderr + median(stderr)) / 2 # moderation in variation
-
-# estimate t statistic with moderated variance
+# Calculate t-statistic using moderated standard error
 t.mod = dx / mod.stderr
 
-# calculate P-value of rejecting null 
-p.mod = 2*pt( -abs(t.mod), n1+n2-2 )
+# Calculate two-sided p-values for moderated t-test
+# pt() gives the cumulative distribution function for t-distribution
+# We multiply by 2 for a two-sided test
+p.mod = 2*pt(-abs(t.mod), n1+n2-2)
 
-# esimate t statistic without moderated variance
+# Calculate regular t-statistic using unmoderated standard error
 t = dx / stderr
 
-# calculate P-value of rejecting null 
-p = 2*pt( -abs(t), n1+n2-2 )
+# Calculate two-sided p-values for regular t-test
+p = 2*pt(-abs(t), n1+n2-2)
 
-par(mfrow=c(1,2))
-hist(p,col="cornflowerblue",border="white",main="",xlab="P-values t-test")
-mtext(paste("signifcant tests:",sum(p<0.05))  )
-hist(p.mod,col="cornflowerblue",border="white",main="",xlab="P-values mod. t-test")
-mtext(paste("signifcant tests:",sum(p.mod<0.05))  )
+# Create side-by-side histograms to compare results
+par(mfrow=c(1,2))  # Set up plotting area for 2 plots side by side
 
+# Plot histogram of regular t-test p-values
+hist(p, col="cornflowerblue", border="white", main="", xlab="P-values t-test")
+mtext(paste("significant tests:", sum(p<0.05)))  # Add text for number of significant results
+
+# Plot histogram of moderated t-test p-values
+hist(p.mod, col="cornflowerblue", border="white", main="", xlab="P-values mod. t-test")
+mtext(paste("significant tests:", sum(p.mod<0.05)))
+
+# Better Viz
+# Reproducing the calculation from above
+set.seed(100)
+gset = rnorm(3000, mean=200, sd=70)
+data = matrix(gset, ncol=6)
+group1 = 1:3
+group2 = 4:6
+n1 = 3
+n2 = 3
+
+# Calculating mean difference between groups
+dx = rowMeans(data[,group1]) - rowMeans(data[,group2])
+
+# Calculating standard errors
+stderr <- sqrt((rowVars(data[,group1])*(n1-1) + rowVars(data[,group2])*(n2-1)) / 
+                 (n1+n2-2) * (1/n1 + 1/n2))
+mod.stderr <- (stderr + median(stderr)) / 2  # moderation in variation
+
+# Calculating t-statistics and p-values
+t.mod = dx / mod.stderr
+p.mod = 2*pt(-abs(t.mod), n1+n2-2)
+t = dx / stderr
+p = 2*pt(-abs(t), n1+n2-2)
+
+# df for plotting
+results_df <- data.frame(
+  GeneID = 1:length(p),
+  Standard_P = p,
+  Moderated_P = p.mod,
+  Standard_t = t,
+  Moderated_t = t.mod,
+  Standard_Significant = p < 0.05,
+  Moderated_Significant = p.mod < 0.05
+)
+
+p_values_long <- pivot_longer(
+  results_df, 
+  cols = c(Standard_P, Moderated_P),
+  names_to = "Test_Type", 
+  values_to = "P_Value"
+)
+
+p_values_long$Test_Type <- factor(
+  p_values_long$Test_Type,
+  levels = c("Standard_P", "Moderated_P"),
+  labels = c("Standard t-test", "Moderated t-test")
+)
+
+# Counting significant tests for each method
+sig_counts <- p_values_long %>%
+  group_by(Test_Type) %>%
+  summarize(
+    Significant = sum(P_Value < 0.05),
+    Total = n(),
+    Percentage = round(Significant/Total*100, 1)
+  )
+
+# Create plots
+# 1. Histogram comparison
+p1 <- ggplot(p_values_long, aes(x = P_Value, fill = Test_Type)) +
+  geom_histogram(position = "identity", alpha = 0.6, bins = 30) +
+  geom_vline(xintercept = 0.05, linetype = "dashed", color = "red") +
+  scale_fill_manual(values = c("Standard t-test" = "#4477AA", "Moderated t-test" = "#CC6677")) +
+  labs(
+    title = "Comparison of P-value Distributions",
+    subtitle = paste(
+      "Standard t-test:", sig_counts$Significant[1], "significant genes (", sig_counts$Percentage[1], "%)\n",
+      "Moderated t-test:", sig_counts$Significant[2], "significant genes (", sig_counts$Percentage[2], "%)"
+    ),
+    x = "P-value",
+    y = "Count"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "top",
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5)
+  )
+
+# 2. Scatter plot comparing p-values from both methods
+p2 <- ggplot(results_df, aes(x = Standard_P, y = Moderated_P)) +
+  geom_point(alpha = 0.3, aes(color = Standard_P != Moderated_P)) +
+  geom_abline(linetype = "dashed", color = "gray50") +
+  geom_hline(yintercept = 0.05, linetype = "dotted", color = "red") +
+  geom_vline(xintercept = 0.05, linetype = "dotted", color = "red") +
+  scale_color_manual(values = c("TRUE" = "#CC6677", "FALSE" = "gray70"), guide = "none") +
+  labs(
+    title = "Standard vs. Moderated t-test P-values",
+    x = "Standard t-test P-value",
+    y = "Moderated t-test P-value"
+  ) +
+  coord_fixed(ratio = 1, xlim = c(0, 1), ylim = c(0, 1)) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+
+grid.arrange(p1, p2, ncol = 2)
+
+# Create volcano plots for both methods
+# 1. Standard t-test volcano plot
+p3 <- ggplot(results_df, aes(x = dx, y = -log10(Standard_P))) +
+  geom_point(aes(color = Standard_Significant), alpha = 0.6) +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "red") +
+  scale_color_manual(values = c("TRUE" = "#CC6677", "FALSE" = "gray70")) +
+  labs(
+    title = "Standard t-test Volcano Plot",
+    x = "Mean Difference",
+    y = "-log10(P-value)",
+    color = "Significant"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(hjust = 0.5, face = "bold")
+  )
+
+# 2. Moderated t-test volcano plot
+p4 <- ggplot(results_df, aes(x = dx, y = -log10(Moderated_P))) +
+  geom_point(aes(color = Moderated_Significant), alpha = 0.6) +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "red") +
+  scale_color_manual(values = c("TRUE" = "#CC6677", "FALSE" = "gray70")) +
+  labs(
+    title = "Moderated t-test Volcano Plot",
+    x = "Mean Difference",
+    y = "-log10(P-value)",
+    color = "Significant"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "top",
+    plot.title = element_text(hjust = 0.5, face = "bold")
+  )
+
+grid.arrange(p1, p2, p3, p4, ncol = 2)
 
 #---- regression ----
 
