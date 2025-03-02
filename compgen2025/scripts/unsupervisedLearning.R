@@ -1,27 +1,37 @@
+# Importing the required libraries
+library(pheatmap)
 
-# make example table
-df=data.frame(
-  IRX4=c(11,13,2,1),
-  OCT4=c(10,13,4,3 ),
-  PAX6=c(1 ,3 ,10,9),
-  row.names=c("patient1","patient2","patient3","patient4")
+# --- VIDEO 1: Distance metrics ----
+# Create a data frame with gene expression values for 3 genes across 4 patients
+df = data.frame(
+  IRX4 = c(11, 13, 2, 1),    # Expression values for IRX4 gene
+  OCT4 = c(10, 13, 4, 3),    # Expression values for OCT4 gene
+  PAX6 = c(1, 3, 10, 9),     # Expression values for PAX6 gene
+  row.names = c("patient1", "patient2", "patient3", "patient4")  # Patient identifiers as row names
 )
 df
+# Calculate distances between patients using different metrics:
 
-# try out difference distance metrics
-dist(df,method="manhattan")
+# Manhattan distance (L1 norm): sum of absolute differences
+# This measures the sum of absolute differences in expression values
+# Also known as city block or taxicab distance
+dist(df, method = "manhattan")
 
+# Euclidean distance (L2 norm): square root of sum of squared differences
+# This is the "straight line" distance in multidimensional space
+dist(df, method = "euclidean")
 
-dist(df,method="euclidean")
-
-as.dist(1-cor(t(df)))
-
+# Correlation distance: 1 minus the correlation coefficient
+# Measures similarity in expression patterns rather than absolute values
+# Transposing with t() because we want correlations between patients (rows), not genes
+as.dist(1 - cor(t(df)))
 
 # scaling data 
-
+# The scale() function standardizes each column (variable) in the data frame
+# This transforms values to have mean = 0 and standard deviation = 1
 scale(df)
 
-
+# --- VIDEO 2: Hierarchical clustering ----
 ##  Hierarchical clustering
 
 d=dist(df)
@@ -29,7 +39,6 @@ hc=hclust(d,method="complete")
 plot(hc)
 
 
-library(pheatmap)
 expFile=system.file("extdata","leukemiaExpressionSubset.rds",package="compGenomRData")
 mat=readRDS(expFile)
 
