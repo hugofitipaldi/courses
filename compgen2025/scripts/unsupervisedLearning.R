@@ -34,13 +34,19 @@ scale(df)
 # --- VIDEO 2: Hierarchical clustering ----
 ##  Hierarchical clustering
 
+# Calculate the distance matrix between patients using Euclidean distance (default)
 d=dist(df)
-hc=hclust(d,method="complete")
-plot(hc)
 
+# Perform hierarchical clustering using complete linkage method
+# Complete linkage defines cluster distance as the maximum distance between any two points in different clusters
+hc=hclust(d,method="complete")
+# Plot the resulting dendrogram showing the hierarchical relationship between patients
+plot(hc)
 
 expFile=system.file("extdata","leukemiaExpressionSubset.rds",package="compGenomRData")
 mat=readRDS(expFile)
+
+mat <- rio::import("data/leukemiaExp.txt")
 
 # set the leukemia type annotation for each sample
 annotation_col = data.frame(
@@ -50,7 +56,6 @@ rownames(annotation_col)=colnames(mat)
 
 pheatmap(mat,show_rownames=FALSE,show_colnames=FALSE,annotation_col=annotation_col,
          scale = "none",clustering_method="ward.D2",clustering_distance_cols="euclidean")
-
 
 # cutting the tree
 
@@ -63,10 +68,7 @@ clu.h80=cutree(hcl,h=80) # cut tree/dendrogram from height 80
 
 table(clu.k5) # number of samples for each cluster
 
-
-
-
-
+# --- VIDEO 3: k-means clustering and the optimal k ----
 # k-means
 set.seed(101)
 
