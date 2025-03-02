@@ -234,7 +234,8 @@ stats::t.test(gene1, gene2) # default in R for t-test
 # or when sample sizes are very small and approximately equal
 stats::t.test(gene1, gene2, var.equal=TRUE)
 
-#--- mult. test correction ----
+# --- VIDEO 4: multiple testing correction ----
+#--- mult. test correction ---
 
 data(hedenfalk)
 
@@ -249,6 +250,53 @@ points(hedenfalk$p,fdr.adj.pval,pch=19,col="blue")
 legend("bottomright",legend=c("q-value","FDR (BH)","Bonferroni"),
        fill=c("black","blue","red"))
 
+# Better plot:
+plot_data <- data.frame(
+  raw_p = hedenfalk$p,
+  qvalue = qvalues,
+  bonferroni = bonf.pval,
+  fdr = fdr.adj.pval
+)
+
+plot_data_long <- tidyr::pivot_longer(
+  plot_data, 
+  cols = c(qvalue, bonferroni, fdr),
+  names_to = "adjustment_method",
+  values_to = "adjusted_p"
+)
+
+plot_data_long$adjustment_method <- factor(
+  plot_data_long$adjustment_method,
+  levels = c("qvalue", "fdr", "bonferroni"),
+  labels = c("q-value", "FDR (BH)", "Bonferroni")
+)
+
+ggplot(plot_data_long, aes(x = raw_p, y = adjusted_p, color = adjustment_method)) +
+  geom_point(alpha = 0.7, size = 2) +
+  geom_abline(linetype = "dashed", color = "gray50", alpha = 0.7) +
+  geom_smooth(se = FALSE, linewidth = 0.7, alpha = 0.7, method = "loess") +
+  scale_color_manual(
+    values = c("q-value" = "#1b9e77", "FDR (BH)" = "#7570b3", "Bonferroni" = "#d95f02"),
+    name = "Adjustment Method"
+  ) +
+  labs(
+    title = "Comparison of P-value Adjustment Methods",
+    subtitle = "Hedenfalk dataset",
+    x = "Raw P-values",
+    y = "Adjusted P-values",
+    caption = "Dashed line: y=x reference"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    legend.background = element_rect(fill = "white", color = "gray90"),
+    legend.margin = margin(5, 5, 5, 5),
+    panel.grid.minor = element_blank(),
+    panel.border = element_rect(color = "gray90", fill = NA),
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5, color = "gray30"),
+    axis.title = element_text(face = "bold")) +
+  coord_fixed(ratio = 1, xlim = c(0, 1), ylim = c(0, 1))
 
 #--- moderated t-test ----
 
