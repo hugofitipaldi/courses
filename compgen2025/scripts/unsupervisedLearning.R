@@ -1,5 +1,10 @@
 # Importing the required libraries
 library(pheatmap)
+library(cluster)
+library(ggplot2)
+library(viridis)
+library(gridExtra)
+library(grid)
 
 # --- VIDEO 1: Distance metrics ----
 # Create a data frame with gene expression values for 3 genes across 4 patients
@@ -43,61 +48,67 @@ hc=hclust(d,method="complete")
 # Plot the resulting dendrogram showing the hierarchical relationship between patients
 plot(hc)
 
+# Load the leukemia gene expression dataset from the compGenomRData package
 expFile=system.file("extdata","leukemiaExpressionSubset.rds",package="compGenomRData")
-mat=readRDS(expFile)
+mat=readRDS(expFile) # compGenomRData was manually downloaded from their github page
 
-mat <- rio::import("data/leukemiaExp.txt")
-
-# set the leukemia type annotation for each sample
+# Create an annotation data frame for samples
+# Extract first 3 characters from column names to identify leukemia types (e.g., "ALL" or "AML")
 annotation_col = data.frame(
   LeukemiaType =substr(colnames(mat),1,3))
 rownames(annotation_col)=colnames(mat)
 
-
+# Create a heatmap visualization of the gene expression data
+# pheatmap: Pretty Heatmap function with enhanced clustering and annotation capabilities
 pheatmap(mat,show_rownames=FALSE,show_colnames=FALSE,annotation_col=annotation_col,
          scale = "none",clustering_method="ward.D2",clustering_distance_cols="euclidean")
 
 # cutting the tree
-
+# Perform hierarchical clustering on the transposed matrix (clustering samples/columns)
 hcl=hclust(dist(t(mat)))
+# Plot the hierarchical clustering dendrogram
 plot(hcl,labels = FALSE, hang= -1)
+# Add a red rectangle to dendrogram at height 80 to indicate clusters
 rect.hclust(hcl, h = 80, border = "red")
-
-clu.k5=cutree(hcl,k=5) # cut tree so that there are 5 clusters
-clu.h80=cutree(hcl,h=80) # cut tree/dendrogram from height 80
-
+# Cut the dendrogram to create cluster assignments in two different ways:
+clu.k5=cutree(hcl,k=5) # Method 1: Cut tree to create exactly 5 clusters
+clu.h80=cutree(hcl,h=80) # Method 2: Cut tree at height 80
+# Display the number of samples in each cluster when using k=5
 table(clu.k5) # number of samples for each cluster
 
 # --- VIDEO 3: k-means clustering and the optimal k ----
 # k-means
 set.seed(101)
 
-# we have to transpose the matrix t()
-# so that we calculate distances between patients
+# Perform k-means clustering on transposed matrix (clustering samples/patients, not genes)
+# k-means finds k cluster centers and assigns each sample to the nearest center
 kclu=kmeans(t(mat),centers=5)  
 
-# number of data points in each cluster
+# Check the number of samples in each cluster
 table(kclu$cluster)
 
+# Perform k-medoids clustering (PAM: Partitioning Around Medoids)
+# Unlike k-means which uses artificial centroids, k-medoids uses actual data points as cluster centers
 kmclu=cluster::pam(t(mat),k=5) #  cluster using k-medoids
 
-# make a data frame with Leukemia type and cluster id
+# Create data frame combining leukemia type and k-medoids cluster assignment
 type2kmclu = data.frame(
   LeukemiaType =substr(colnames(mat),1,3),
   cluster=kmclu$cluster)
 
-table(type2kmclu)
+table(type2kmclu) # Cross-tabulate leukemia types and cluster assignments for k-medoids
 
-
+# Create similar data frame for k-means clustering results
 type2kclu = data.frame(
   LeukemiaType =substr(colnames(mat),1,3),
   cluster=kclu$cluster)
-table(type2kclu)
+table(type2kclu) # Cross-tabulate leukemia types and cluster assignments for k-means
 
-# Calculate distances
+# Calculate distance matrix between samples
 dists=dist(t(mat))
 
-# calculate MDS
+# Perform multidimensional scaling (MDS) to visualize samples in 2D space
+# MDS preserves distances between samples as much as possible
 mds=cmdscale(dists)
 
 # plot the patients in the 2D space
@@ -110,22 +121,90 @@ legend("bottomright",
        border=NA,box.col=NA)
 
 
+# Better viz
+# Create data frame for plotting
+mds_df <- data.frame(
+  MDS1 = mds[,1],
+  MDS2 = mds[,2],
+  Cluster = as.factor(kclu$cluster),
+  LeukemiaType = substr(colnames(mat), 1, 3)
+)
+
+# Create improved MDS plot
+ggplot(mds_df, aes(x = MDS1, y = MDS2, color = Cluster, shape = LeukemiaType)) +
+  geom_point(size = 3, alpha = 0.8) +
+  scale_color_viridis_d(option = "D") +
+  theme_minimal() +
+  labs(title = "MDS Plot of Leukemia Samples",
+       subtitle = "Colored by k-means cluster, shaped by leukemia type",
+       x = "Dimension 1",
+       y = "Dimension 2") +
+  theme(legend.position = "right",
+        plot.title = element_text(face = "bold"),
+        legend.title = element_text(face = "bold"))
+
 
 # optimum k
-
-library(cluster)
+# Determine optimum k using silhouette analysis
 set.seed(101)
-pamclu=cluster::pam(t(mat),k=5)
-plot(silhouette(pamclu),main=NULL)
+pamclu=cluster::pam(t(mat),k=5) 
+plot(silhouette(pamclu),main=NULL) # Plot silhouette widths for k=5
 
-#plot silhouette for different k
+# Calculate average silhouette width for different values of k (2 through 7)
 Ks=sapply(2:7,
           function(i) 
             summary(silhouette(pam(t(mat),k=i)))$avg.width)
+# Plot average silhouette width vs. k to identify optimal number of clusters
 plot(2:7,Ks,xlab="k",ylab="av. silhouette",type="b",
      pch=19)
 
 
+# Better Viz
+# Function to create silhouette plot for a given k
+create_sil_plot <- function(k) {
+  pam_result <- pam(t(mat), k = k)
+  sil <- silhouette(pam_result)
+  sil_df <- data.frame(
+    cluster = sil[,1],
+    sil_width = sil[,3],
+    id = 1:nrow(sil)
+  )
+  
+  # Order by cluster and decreasing silhouette width
+  sil_df <- sil_df[order(sil_df$cluster, -sil_df$sil_width),]
+  sil_df$id <- 1:nrow(sil_df)
+  
+  # Calculate average silhouette width
+  avg_sil <- mean(sil_df$sil_width)
+  
+  # Plot
+  p <- ggplot(sil_df, aes(x = id, y = sil_width, fill = as.factor(cluster))) +
+    geom_bar(stat = "identity") +
+    geom_hline(yintercept = avg_sil, linetype = "dashed", color = "red") +
+    scale_fill_viridis_d(option = "D") +
+    labs(title = paste("k =", k),
+         subtitle = paste("Average silhouette width:", round(avg_sil, 3)),
+         x = "Sample ID (ordered by cluster and silhouette width)",
+         y = "Silhouette Width",
+         fill = "Cluster") +
+    theme_minimal() +
+    theme(legend.position = "none") +
+    ylim(-0.2, 1)
+  
+  return(p)
+}
+
+# Create plots for k = 2 to 6
+sil_plots <- lapply(2:6, create_sil_plot)
+
+# Arrange plots in a grid
+grid.arrange(
+  grobs = sil_plots,
+  ncol = 2,
+  top = textGrob("Silhouette Analysis for Different k Values", 
+                 gp = gpar(fontface = "bold", fontsize = 14)))
+
+# --- VIDEO 4: Dimensionality reduction ----
 #--- PCA on covariance matrix
 
 # create the subset of the data with two genes only
